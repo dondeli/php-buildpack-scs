@@ -42,12 +42,14 @@ from build_pack_utils import utils
 
 def load_cfg():
     """Load's the build pack's default options.json file"""
+    print("Load CFG") # DELI
     return utils.FormattedDict(json.load(
         open(os.path.join(BPDIR, 'defaults', 'options.json'), 'rt')))
 
 
 def run():
     """Parse the argument in sys.argv and run"""
+    print("Enter run()") # DELI
     parser = argparse.ArgumentParser(prog='binaries')
     subparsers = parser.add_subparsers(title='Commands',
                                        description='List of sub commands',
@@ -157,6 +159,7 @@ def run():
 def generate_build_list(binPath, urlBase, index, allPkgs):
     """Generate a JSON files with the download URLS for the files in binPath"""
     bins = {}
+    print(binPath) # DELI
     for package in os.listdir(binPath):
         if package.endswith('.json'):
             continue
@@ -167,6 +170,7 @@ def generate_build_list(binPath, urlBase, index, allPkgs):
                                                                     urlBase,
                                                                     package,
                                                                     version)
+                print(bins[package][version]) # DELI
         else:
             majVers = get_major_versions(os.path.join(binPath, package))
             for majVer in majVers:
@@ -264,7 +268,11 @@ def cached_download(url, toPath, cache):
     if cache:
         cachedPath = os.path.expanduser('~/.buildpack-packager')
         safe_makedirs(cachedPath)
-        cachedFilePath = os.path.join(cachedPath, os.path.basename(url))
+        if '?' in url:
+            simple_url = url.split('?')[0]
+            cachedFilePath = os.path.join(cachedPath, os.path.basename(simple_url))
+        else:
+            cachedFilePath = os.path.join(cachedPath, os.path.basename(url))
 
         if not os.path.exists(cachedFilePath):
             download(url, cachedFilePath)

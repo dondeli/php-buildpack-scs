@@ -221,6 +221,7 @@ class UnzipUtil(object):
             return self._unzip
 
     def extract(self, zipFile, intoDir, strip=False, method=None):
+        print("ZipFile: %s\t Dir: %s" % (zipFile, intoDir))
         """Extract files from the archive.
 
         Extract all of the files from the given archive.  Files are

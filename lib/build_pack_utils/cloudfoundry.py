@@ -126,6 +126,7 @@ class CloudFoundryInstaller(object):
                 self._log.error(
                     'WARNING: DOWNLOAD_CLASS invalid, must include '
                     'package name!')
+        # DELI
         return Downloader
 
     def _is_url(self, val):
@@ -136,11 +137,18 @@ class CloudFoundryInstaller(object):
                               extract=True):
         self._log.debug("Installing direct [%s]", url)
         if not fileName:
-            fileName = url.split('/')[-1]
+            # DELI: if statement
+            if '?' in url:
+                pass
+                fileName = url.split('?')[0].split('/')[-1]
+            else:
+                fileName = url.split('/')[-1]
         if self._is_url(hsh):
             digest = self._dwn.download_direct(hsh)
         else:
             digest = hsh
+        # DELI
+        print("HSH: %s" % hsh)
         self._log.debug(
             "Installing [%s] with digest [%s] into [%s] with "
             "name [%s] stripping [%s]",
@@ -149,9 +157,14 @@ class CloudFoundryInstaller(object):
         if fileToInstall is None:
             self._log.debug('File [%s] not in cache.', fileName)
             fileToInstall = os.path.join(self._ctx['TMPDIR'], fileName)
+            # DELI: 2 lines
+            print("FileToInstall join os path %s" % fileToInstall)
+            print("URL %s" % url)
             self._dwn.download(url, fileToInstall)
             digest = self._hashUtil.calculate_hash(fileToInstall)
             fileToInstall = self._dcm.put(fileName, fileToInstall, digest)
+        # DELI
+        print("FileToInstall finaly %s" % fileToInstall)
         if extract:
             return self._unzipUtil.extract(fileToInstall,
                                            installDir,
@@ -171,6 +184,7 @@ class CloudFoundryInstaller(object):
                                       '%s_PACKAGE_INSTALL_DIR' % installKey,
                                       installKey.lower()))
         strip = self._ctx.get('%s_STRIP' % installKey, False)
+        # DELI: Download hash file
         return self.install_binary_direct(url, hashUrl, installDir,
                                           strip=strip)
 

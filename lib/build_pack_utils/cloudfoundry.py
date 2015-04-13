@@ -5,7 +5,7 @@ import tempfile
 import shutil
 import utils
 import logging
-import fcntl
+import subprocess
 from urlparse import urlparse
 from zips import UnzipUtil
 from hashes import HashUtil
@@ -25,9 +25,12 @@ class CloudFoundryUtil(object):
     def initialize():
         # set stdout as non-buffered
         if hasattr(sys.stdout, 'fileno'):
-            fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
-            fl |= os.O_DSYNC
-            fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL)
+             fileno = sys.stdout.fileno()
+             tmp_fd = os.dup(fileno)
+             sys.stdout.close()
+             os.dup2(tmp_fd, fileno)
+             os.close(tmp_fd)
+             sys.stdout = os.fdopen(fileno, "w", 0)
         ctx = utils.FormattedDict()
         # Add environment variables
         for key, val in os.environ.iteritems():
@@ -75,12 +78,12 @@ class CloudFoundryUtil(object):
                                 filename=os.path.join(logDir, 'bp.log'))
 
     @staticmethod
-    def load_json_config_file_from(folder, cfgFile):
+    def load_json_config_file_from(folder, cfgFile, step=None):
         return CloudFoundryUtil.load_json_config_file(os.path.join(folder,
-                                                                   cfgFile))
+                                                                   cfgFile), step)
 
     @staticmethod
-    def load_json_config_file(cfgPath):
+    def load_json_config_file(cfgPath, step=None):
         if os.path.exists(cfgPath):
             _log.debug("Loading config from [%s]", cfgPath)
             with open(cfgPath, 'rt') as cfgFile:
@@ -89,6 +92,12 @@ class CloudFoundryUtil(object):
                 except ValueError, e:
                     _log.warn("Error reading [%s]", cfgPath)
                     _log.debug("Error reading [%s]", cfgPath, exc_info=e)
+                    if step != 'detect':
+                        print 'Incorrectly formatted JSON object at: %s' % cfgPath
+                        cfgFile.seek(0)
+                        for line in cfgFile:
+                            print line
+                        exit(1)
         return {}
 
 
@@ -121,72 +130,86 @@ class CloudFoundryInstaller(object):
                     return getattr(m, clsName)
                 except AttributeError:
                     self._log.exception(
-                        'WARNING: DOWNLOAD_CLASS not found!')
+                            'WARNING: DOWNLOAD_CLASS not found!')
             else:
                 self._log.error(
-                    'WARNING: DOWNLOAD_CLASS invalid, must include '
-                    'package name!')
-        # DELI
-        return Downloader
+                        'WARNING: DOWNLOAD_CLASS invalid, must include '
+                        'package name!')
+                return Downloader
 
     def _is_url(self, val):
         return urlparse(val).scheme != ''
 
     def install_binary_direct(self, url, hsh, installDir,
-                              fileName=None, strip=False,
-                              extract=True):
+            fileName=None, strip=False,
+            extract=True):
+        exit_code, translated_url = self.translate_dependency_url(url)
+        if exit_code == 0:
+            url = translated_url
+
         self._log.debug("Installing direct [%s]", url)
         if not fileName:
-            # DELI: if statement
-            if '?' in url:
-                pass
-                fileName = url.split('?')[0].split('/')[-1]
-            else:
-                fileName = url.split('/')[-1]
-        if self._is_url(hsh):
-            digest = self._dwn.download_direct(hsh)
-        else:
-            digest = hsh
-        # DELI
-        print("HSH: %s" % hsh)
-        self._log.debug(
-            "Installing [%s] with digest [%s] into [%s] with "
-            "name [%s] stripping [%s]",
-            url, digest, installDir, fileName, strip)
-        fileToInstall = self._dcm.get(fileName, digest)
-        if fileToInstall is None:
-            self._log.debug('File [%s] not in cache.', fileName)
-            fileToInstall = os.path.join(self._ctx['TMPDIR'], fileName)
-            # DELI: 2 lines
-            print("FileToInstall join os path %s" % fileToInstall)
-            print("URL %s" % url)
-            self._dwn.download(url, fileToInstall)
-            digest = self._hashUtil.calculate_hash(fileToInstall)
-            fileToInstall = self._dcm.put(fileName, fileToInstall, digest)
-        # DELI
-        print("FileToInstall finaly %s" % fileToInstall)
+            fileName = urlparse(url).path.split('/')[-1]
+        fileToInstall = os.path.join(self._ctx['TMPDIR'], fileName)
+        self._dwn.download(url, fileToInstall)
+
         if extract:
             return self._unzipUtil.extract(fileToInstall,
-                                           installDir,
-                                           strip)
+                    installDir,
+                    strip)
         else:
             shutil.copy(fileToInstall, installDir)
             return installDir
 
+    def _install_binary_from_manifest(self, url, installDir,
+            fileName=None, strip=False,
+            extract=True):
+        """
+            To support backwards compatibility with apps calling this method
+            in their custom extension configs, we made this internal method
+            which has no need to check for a hash and will not hit the internet
+            if the dependency is missing from the manifest.
+
+            The other 'exposed' method does make requests to the internet should the
+            dependency not exist in the manifest and intentionally takes the hash sha 
+            argument but makes no use of it.
+        """
+        exit_code, url = self.translate_dependency_url(url)
+        if exit_code != 0:
+            print "Could not get translated url, exited with: %s", translate_url_output
+            exit(1)
+        self._log.debug("Installing direct [%s]", url)
+        if not fileName:
+            fileName = urlparse(url).path.split('/')[-1]
+        fileToInstall = os.path.join(self._ctx['TMPDIR'], fileName)
+        self._dwn.download(url, fileToInstall)
+
+        if extract:
+            return self._unzipUtil.extract(fileToInstall,
+                    installDir,
+                    strip)
+        else:
+            shutil.copy(fileToInstall, installDir)
+            return installDir
+
+    def translate_dependency_url(self, url):
+        process = subprocess.Popen([os.path.join(self._ctx['BP_DIR'], 'compile-extensions', 'bin', 'translate_dependency_url'), url], stdout=subprocess.PIPE)
+        exit_code = process.wait()
+        translate_url_output = process.stdout.read().rstrip()
+        return (exit_code, translate_url_output)
+
     def install_binary(self, installKey):
         self._log.debug('Installing [%s]', installKey)
         url = self._ctx['%s_DOWNLOAD_URL' % installKey]
-        hashUrl = self._ctx.get(
-            '%s_HASH_DOWNLOAD_URL' % installKey,
-            "%s.%s" % (url, self._ctx['CACHE_HASH_ALGORITHM']))
+
         installDir = os.path.join(self._ctx['BUILD_DIR'],
-                                  self._ctx.get(
-                                      '%s_PACKAGE_INSTALL_DIR' % installKey,
-                                      installKey.lower()))
+                self._ctx.get(
+                    '%s_PACKAGE_INSTALL_DIR' % installKey,
+                    installKey.lower()))
         strip = self._ctx.get('%s_STRIP' % installKey, False)
-        # DELI: Download hash file
-        return self.install_binary_direct(url, hashUrl, installDir,
-                                          strip=strip)
+
+        return self._install_binary_from_manifest(url, installDir,
+                strip=strip)
 
     def _install_from(self, fromPath, fromLoc, toLocation=None, ignore=None):
         """Copy file or directory from a location to the droplet

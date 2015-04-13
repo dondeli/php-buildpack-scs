@@ -19,7 +19,12 @@ from build_pack_utils import Builder
 (Builder()
      .configure()  # noqa
          .default_config()
-         .user_config()
+         .user_config(step='detect')
+         .done()
+     .detect()
+         .by_name("composer.json")
+         .recursive()
+         .when_not_found_continue()
          .done()
      .detect()
          .ends_with(".php")

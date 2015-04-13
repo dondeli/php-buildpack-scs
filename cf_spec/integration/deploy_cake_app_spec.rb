@@ -13,7 +13,8 @@ describe 'CF PHP Buildpack' do
     let(:app_name) { 'cake_with_local_dependencies' }
     let(:options) do
       {
-        with_pg: true
+        with_pg: true,
+        start_command: "$HOME/app/Console/cake schema create -y && $HOME/.bp/bin/start"
       }
     end
 
@@ -24,13 +25,10 @@ describe 'CF PHP Buildpack' do
       expect(browser).to have_body 'CakePHP'
       expect(browser).not_to have_body 'Missing Database Table'
 
-      expect(app.host).not_to have_internet_traffic
-    end
-
-    specify 'visiting a non-root path' do
       browser.visit_path('/users/add')
-
       expect(browser).to have_body('Add New User')
+
+      expect(app.host).not_to have_internet_traffic
     end
   end
 
@@ -39,7 +37,8 @@ describe 'CF PHP Buildpack' do
     let(:options) do
       {
         with_pg: true,
-        env: {'COMPOSER_GITHUB_OAUTH_TOKEN' => ENV['COMPOSER_GITHUB_OAUTH_TOKEN']}
+        env: {'COMPOSER_GITHUB_OAUTH_TOKEN' => ENV['COMPOSER_GITHUB_OAUTH_TOKEN']},
+        start_command: "$HOME/app/Console/cake schema create -y && $HOME/.bp/bin/start"
       }
     end
 

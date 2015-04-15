@@ -1,0 +1,6 @@
+{
+	"COMPOSER_VENDOR_DIR": "vendor",
+    "WEBDIR": "app/webroot",
+    "LIBDIR": "library",
+    "PHP_EXTENSIONS": ["pdo", "pdo_pgsql", "mcrypt"]
+}
